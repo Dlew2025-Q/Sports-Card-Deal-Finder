@@ -169,7 +169,7 @@ export default function App() {
         setError(null);
         try {
             // In a real deployment, you would change this URL to your live server
-            const url = new URL('http://localhost:3001/api/top-deals');
+            const url = new URL('https://sports-card-deal-server.onrender.com');
             if (minBudget) url.searchParams.append('minPrice', minBudget);
             if (maxBudget) url.searchParams.append('maxPrice', maxBudget);
 
