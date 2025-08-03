@@ -1,9 +1,13 @@
 /* eslint-disable no-undef */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
-import { Search, Tag, Star, TrendingUp, TrendingDown, Flame, DollarSign, ListFilter, ExternalLink, Activity, ShieldCheck, UserCheck, Truck, AlertCircle, BrainCircuit } from 'lucide-react';
+import { Search, Tag, Star, TrendingUp, TrendingDown, Flame, DollarSign, ExternalLink, Activity, UserCheck, Truck, AlertCircle, BrainCircuit } from 'lucide-react';
+
+// --- Configuration ---
+// IMPORTANT: Replace this with the live URL of your server on Render.
+const API_BASE_URL = 'https://sports-card-server.onrender.com'; 
 
 // --- Firebase Configuration ---
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -24,16 +28,15 @@ if (firebaseConfig.apiKey) {
 }
 
 // --- Helper Components ---
-const DealScore = ({ price, psaValue }) => {
-    if (!psaValue || psaValue === 0) return null;
-    const difference = psaValue - price;
-    const percentage = (difference / psaValue) * 100;
+const DealScore = ({ price, avgSalePrice }) => {
+    if (!avgSalePrice || avgSalePrice === 0) return null;
+    const difference = avgSalePrice - price;
+    const percentage = (difference / avgSalePrice) * 100;
 
     const getDealInfo = () => {
         if (percentage > 15) return { text: 'Excellent Deal', color: 'bg-green-500', icon: <Flame className="w-4 h-4 mr-1" /> };
         if (percentage > 5) return { text: 'Good Deal', color: 'bg-emerald-500', icon: <TrendingDown className="w-4 h-4 mr-1" /> };
-        if (percentage > -5) return { text: 'Fair Price', color: 'bg-gray-500', icon: <Tag className="w-4 h-4 mr-1" /> };
-        return { text: 'Overpriced', color: 'bg-red-500', icon: <TrendingUp className="w-4 h-4 mr-1" /> };
+        return { text: 'Fair Price', color: 'bg-gray-500', icon: <Tag className="w-4 h-4 mr-1" /> };
     };
 
     const { text, color, icon } = getDealInfo();
@@ -47,7 +50,7 @@ const DealScore = ({ price, psaValue }) => {
 };
 
 const Card = ({ item, isTracked, onTrack, onAnalyze }) => {
-    const { id, title, grade, price, psaValue, imageUrl, listingUrl, sellerRating, shippingPrice, analysis, isAnalyzing } = item;
+    const { id, title, grade, price, avgSalePrice, imageUrl, listingUrl, sellerRating, shippingPrice, analysis, isAnalyzing } = item;
 
     const getRatingColor = (rating) => {
         if (rating > 10000) return 'text-green-400';
@@ -61,7 +64,7 @@ const Card = ({ item, isTracked, onTrack, onAnalyze }) => {
                 <div className="relative">
                     <img src={imageUrl} alt={title} className="w-full h-64 object-cover transform group-hover:scale-105 transition-transform duration-300" 
                          onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/300x400/2d3748/ffffff?text=Image+Not+Found' }}/>
-                    <DealScore price={price} psaValue={psaValue} />
+                    <DealScore price={price} avgSalePrice={avgSalePrice} />
                     <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <ExternalLink className="w-5 h-5" />
                     </div>
@@ -80,8 +83,8 @@ const Card = ({ item, isTracked, onTrack, onAnalyze }) => {
                         <span className="text-white font-bold">${price.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-lg">
-                        <span className="text-gray-400">PSA Value:</span>
-                        <span className="text-white font-bold">{psaValue > 0 ? `$${psaValue.toLocaleString()}` : 'N/A'}</span>
+                        <span className="text-green-400">Avg. Sale Price:</span>
+                        <span className="text-green-400 font-bold">{avgSalePrice > 0 ? `$${avgSalePrice.toFixed(2)}` : 'N/A'}</span>
                     </div>
                 </div>
                 {analysis && (
@@ -170,8 +173,7 @@ export default function App() {
         setLoading(true);
         setError(null);
         try {
-            // In a real deployment, you would change this URL to your live server
-            const url = new URL('http://localhost:3001/api/top-deals');
+            const url = new URL(`${API_BASE_URL}/api/top-deals`);
             if (minBudget) url.searchParams.append('minPrice', minBudget);
             if (maxBudget) url.searchParams.append('maxPrice', maxBudget);
 
@@ -209,7 +211,7 @@ export default function App() {
     const handleAnalyze = async (cardToAnalyze) => {
         setTopDeals(prev => prev.map(c => c.id === cardToAnalyze.id ? { ...c, isAnalyzing: true } : c));
         try {
-            const response = await fetch('http://localhost:3001/api/listing-analysis', {
+            const response = await fetch(`${API_BASE_URL}/api/listing-analysis`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title: cardToAnalyze.title })
