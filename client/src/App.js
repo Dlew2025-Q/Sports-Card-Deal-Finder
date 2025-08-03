@@ -6,8 +6,8 @@ import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'fi
 import { Search, Tag, Star, TrendingUp, TrendingDown, Flame, DollarSign, ExternalLink, Activity, UserCheck, Truck, AlertCircle, BrainCircuit } from 'lucide-react';
 
 // --- Configuration ---
-// IMPORTANT: Replace this with the live URL of your server on Render.
-const API_BASE_URL = 'https://sports-card-server.onrender.com'; 
+// This now points to the correct server URL you provided.
+const API_BASE_URL = 'https://sports-card-deal-server.onrender.com'; 
 
 // --- Firebase Configuration ---
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
