@@ -24,15 +24,16 @@ if (firebaseConfig.apiKey) {
 }
 
 // --- Helper Components ---
-const DealScore = ({ price, avgSalePrice }) => {
-    if (!avgSalePrice || avgSalePrice === 0) return null;
-    const difference = avgSalePrice - price;
-    const percentage = (difference / avgSalePrice) * 100;
+const DealScore = ({ price, psaValue }) => {
+    if (!psaValue || psaValue === 0) return null;
+    const difference = psaValue - price;
+    const percentage = (difference / psaValue) * 100;
 
     const getDealInfo = () => {
         if (percentage > 15) return { text: 'Excellent Deal', color: 'bg-green-500', icon: <Flame className="w-4 h-4 mr-1" /> };
         if (percentage > 5) return { text: 'Good Deal', color: 'bg-emerald-500', icon: <TrendingDown className="w-4 h-4 mr-1" /> };
-        return { text: 'Fair Price', color: 'bg-gray-500', icon: <Tag className="w-4 h-4 mr-1" /> };
+        if (percentage > -5) return { text: 'Fair Price', color: 'bg-gray-500', icon: <Tag className="w-4 h-4 mr-1" /> };
+        return { text: 'Overpriced', color: 'bg-red-500', icon: <TrendingUp className="w-4 h-4 mr-1" /> };
     };
 
     const { text, color, icon } = getDealInfo();
@@ -46,7 +47,7 @@ const DealScore = ({ price, avgSalePrice }) => {
 };
 
 const Card = ({ item, isTracked, onTrack, onAnalyze }) => {
-    const { id, title, grade, price, avgSalePrice, imageUrl, listingUrl, sellerRating, shippingPrice, analysis, isAnalyzing } = item;
+    const { id, title, grade, price, psaValue, imageUrl, listingUrl, sellerRating, shippingPrice, analysis, isAnalyzing } = item;
 
     const getRatingColor = (rating) => {
         if (rating > 10000) return 'text-green-400';
@@ -60,7 +61,7 @@ const Card = ({ item, isTracked, onTrack, onAnalyze }) => {
                 <div className="relative">
                     <img src={imageUrl} alt={title} className="w-full h-64 object-cover transform group-hover:scale-105 transition-transform duration-300" 
                          onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/300x400/2d3748/ffffff?text=Image+Not+Found' }}/>
-                    <DealScore price={price} avgSalePrice={avgSalePrice} />
+                    <DealScore price={price} psaValue={psaValue} />
                     <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <ExternalLink className="w-5 h-5" />
                     </div>
@@ -79,8 +80,8 @@ const Card = ({ item, isTracked, onTrack, onAnalyze }) => {
                         <span className="text-white font-bold">${price.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-lg">
-                        <span className="text-green-400">Avg. Sale Price:</span>
-                        <span className="text-green-400 font-bold">{avgSalePrice > 0 ? `$${avgSalePrice.toFixed(2)}` : 'N/A'}</span>
+                        <span className="text-gray-400">PSA Value:</span>
+                        <span className="text-white font-bold">{psaValue > 0 ? `$${psaValue.toLocaleString()}` : 'N/A'}</span>
                     </div>
                 </div>
                 {analysis && (
