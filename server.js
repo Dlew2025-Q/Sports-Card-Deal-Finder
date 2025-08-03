@@ -51,6 +51,12 @@ const scrapePsaValue = async (cardName, grade) => {
 
 // --- API Endpoints ---
 
+// NEW: Health Check Endpoint
+app.get('/', (req, res) => {
+    res.send('Card Deal Finder server is running!');
+});
+
+
 app.post('/api/run-scrape-job', async (req, res) => {
     console.log('Starting PSA price and sales velocity scraping job...');
     try {
@@ -125,8 +131,6 @@ app.get('/api/top-deals', async (req, res) => {
         const pricesData = await fs.readFile(PRICES_DB_PATH, 'utf8');
         pricesDb = JSON.parse(pricesData);
     } catch (error) {
-        // ** THE FIX IS HERE **
-        // If the file doesn't exist, return an empty array instead of crashing.
         console.log('psa_prices.json not found. Run the scrape job to create it.');
         return res.json([]);
     }
