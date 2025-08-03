@@ -1,5 +1,7 @@
 const express = require('express');
-const fetch = require('node-fetch');
+const fetch = require('node-fetch'); // <-- THIS LINE FIXES THE ERROR
+const axios = require('axios');
+const cheerio = require('cheerio');
 const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
@@ -10,93 +12,157 @@ const PORT = process.env.PORT || 3001;
 // --- Configuration ---
 const EBAY_APP_ID = 'DarrenLe-SportsCa-SBX-a63bb60a4-d55b26f0';
 const HOTLIST_PATH = path.join(__dirname, 'hotlist.json');
+const PRICES_DB_PATH = path.join(__dirname, 'psa_prices.json');
 const GEMINI_API_KEY = ''; // The environment will provide this
 
 app.use(cors());
 app.use(express.json());
 
+// --- Helper Functions ---
+
+const scrapePsaValue = async (cardName, grade) => {
+    const psaUrl = `https://www.psacard.com/priceguide/search?q=${encodeURIComponent(cardName)}`;
+    try {
+        const { data } = await axios.get(psaUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
+        });
+        const $ = cheerio.load(data);
+        let psaValue = null;
+        $('table.price-guide-table tbody tr').each((i, elem) => {
+            const rowGrade = $(elem).find('td').eq(0).text().trim();
+            if (rowGrade === grade) {
+                const priceText = $(elem).find('td').eq(1).text().trim();
+                psaValue = parseFloat(priceText.replace(/[$,]/g, ''));
+                return false;
+            }
+        });
+        return psaValue;
+    } catch (error) {
+        console.error(`Error scraping for ${cardName} (${grade}):`, error.message);
+        return null;
+    }
+};
+
 // --- API Endpoints ---
 
-/**
- * Gets the top deals by comparing live eBay "Buy It Now" prices 
- * to the average of recent eBay sales for the same item.
- */
-app.get('/api/top-deals', async (req, res) => {
-    const { minPrice, maxPrice } = req.query;
-
+app.post('/api/run-scrape-job', async (req, res) => {
+    console.log('Starting PSA price and sales velocity scraping job...');
     try {
         const hotlistData = await fs.readFile(HOTLIST_PATH, 'utf8');
         const hotlist = JSON.parse(hotlistData);
-        let allDeals = [];
+        let pricesDb = {};
+        
+        try {
+            const existingData = await fs.readFile(PRICES_DB_PATH, 'utf8');
+            pricesDb = JSON.parse(existingData);
+        } catch (e) {
+            console.log("Price database not found, creating a new one.");
+        }
 
         for (const card of hotlist) {
             for (const grade of card.grades) {
+                const key = `${card.name} | ${grade}`;
+                console.log(`Analyzing: ${key}`);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Rate limit
+
+                // 1. Scrape PSA Value
+                const psaValue = await scrapePsaValue(card.name, grade);
+                if (!psaValue) continue;
+
+                // 2. Fetch Sales History from eBay
                 const keywords = `${card.name} ${grade}`;
-                
-                // --- Step 1: Get recent completed sales to find the average sale price ---
-                const completedItemsUrl = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
-                
-                const completedResponse = await fetch(completedItemsUrl);
-                const completedData = await completedResponse.json();
-                const soldItems = completedData?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item || [];
+                const ebayUrl = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
+                const ebayResponse = await fetch(ebayUrl);
+                const ebayData = await ebayResponse.json();
+                const items = ebayData?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item || [];
+                const salesHistory = items.slice(0, 10).map(item => ({
+                    date: item.sellingStatus[0].endTime[0].split('T')[0],
+                    price: parseFloat(item.sellingStatus[0].currentPrice[0].__value__)
+                }));
 
-                if (soldItems.length < 3) { // Need at least 3 sales to get a reliable average
-                    continue; // Skip if not enough sales data
+                let saleProbability = "Slow"; // Default
+                if (salesHistory.length >= 3) {
+                    // 3. Get AI Analysis if there's enough data
+                    const prompt = `You are a sports card investment analyst. Classify the market velocity of a card based on its recent sales history. Respond with only a single word: "Quick", "Medium", or "Slow". "Quick" means multiple sales per week. "Medium" means about one sale per week. "Slow" means less than one sale per week. Card: ${card.name}, Grade: ${grade}, Recent Sales: ${salesHistory.length} sales in the last few weeks. Classification:`;
+                    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+                    const geminiResponse = await fetch(geminiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+                    if (geminiResponse.ok) {
+                        const geminiResult = await geminiResponse.json();
+                        const analysis = geminiResult.candidates[0].content.parts[0].text.trim();
+                        if (["Quick", "Medium", "Slow"].includes(analysis)) {
+                            saleProbability = analysis;
+                        }
+                    }
                 }
-
-                const totalSoldPrice = soldItems.reduce((acc, item) => acc + parseFloat(item.sellingStatus[0].currentPrice[0].__value__), 0);
-                const avgSalePrice = totalSoldPrice / soldItems.length;
-
-                // --- Step 2: Find active "Buy It Now" listings for the same card ---
-                let activeItemsUrl = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=ListingType&itemFilter(0).value=FixedPrice`;
                 
-                let itemFilterIndex = 1;
-                if (minPrice) {
-                    activeItemsUrl += `&itemFilter(${itemFilterIndex}).name=MinPrice&itemFilter(${itemFilterIndex}).value=${minPrice}`;
-                    itemFilterIndex++;
-                }
-                if (maxPrice) {
-                    activeItemsUrl += `&itemFilter(${itemFilterIndex}).name=MaxPrice&itemFilter(${itemFilterIndex}).value=${maxPrice}`;
-                    itemFilterIndex++;
-                }
-
-                const activeResponse = await fetch(activeItemsUrl);
-                const activeData = await activeResponse.json();
-                const activeItems = activeData?.findItemsByKeywordsResponse?.[0]?.searchResult?.[0]?.item || [];
-
-                const deals = activeItems.map(item => {
-                    const price = parseFloat(item.sellingStatus[0].currentPrice[0].__value__);
-                    return {
-                        id: item.itemId[0],
-                        title: item.title[0],
-                        grade: grade,
-                        price: price,
-                        avgSalePrice: avgSalePrice,
-                        dealScore: (avgSalePrice - price) / avgSalePrice,
-                        imageUrl: item.galleryURL[0],
-                        listingUrl: item.viewItemURL[0],
-                        sellerRating: parseInt(item.sellerInfo[0].feedbackScore[0]),
-                        shippingPrice: parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0),
-                        listingType: 'FixedPrice'
-                    };
-                }).filter(deal => deal.price < avgSalePrice);
-
-                allDeals = [...allDeals, ...deals];
+                pricesDb[key] = {
+                    price: psaValue,
+                    saleProbability: saleProbability,
+                    lastUpdated: new Date().toISOString()
+                };
             }
         }
-
-        // Sort all found deals by the best deal score
-        allDeals.sort((a, b) => b.dealScore - a.dealScore);
-
-        res.json(allDeals.slice(0, 50)); // Return the top 50 deals
-
+        await fs.writeFile(PRICES_DB_PATH, JSON.stringify(pricesDb, null, 2));
+        console.log('PSA price scraping job completed successfully.');
+        res.status(200).json({ message: 'Scraping job completed.', data: pricesDb });
     } catch (error) {
-        console.error('Error fetching top deals:', error);
-        res.status(500).json({ error: 'Failed to fetch top deals from eBay.' });
+        console.error('Error running scrape job:', error);
+        res.status(500).json({ error: 'Failed to run scraping job.' });
     }
 });
 
-// --- NEW: AI Listing Analysis Endpoint ---
+app.get('/api/top-deals', async (req, res) => {
+    const { minPrice, maxPrice } = req.query;
+    try {
+        const pricesData = await fs.readFile(PRICES_DB_PATH, 'utf8');
+        const pricesDb = JSON.parse(pricesData);
+        let allDeals = [];
+        for (const key in pricesDb) {
+            const [cardName, grade] = key.split(' | ');
+            const { price: psaValue, saleProbability } = pricesDb[key];
+            const keywords = `${cardName} ${grade}`;
+            let itemFilterIndex = 0;
+            let url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(${itemFilterIndex}).name=ListingType&itemFilter(${itemFilterIndex}).value=FixedPrice`;
+            itemFilterIndex++;
+            if (minPrice) {
+                url += `&itemFilter(${itemFilterIndex}).name=MinPrice&itemFilter(${itemFilterIndex}).value=${minPrice}&itemFilter(${itemFilterIndex}).paramName=Currency&itemFilter(${itemFilterIndex}).paramValue=USD`;
+                itemFilterIndex++;
+            }
+            if (maxPrice) {
+                url += `&itemFilter(${itemFilterIndex}).name=MaxPrice&itemFilter(${itemFilterIndex}).value=${maxPrice}&itemFilter(${itemFilterIndex}).paramName=Currency&itemFilter(${itemFilterIndex}).paramValue=USD`;
+                itemFilterIndex++;
+            }
+            const ebayResponse = await fetch(url);
+            const data = await ebayResponse.json();
+            const items = data?.findItemsByKeywordsResponse?.[0]?.searchResult?.[0]?.item || [];
+            const deals = items.map(item => ({
+                id: item.itemId[0],
+                title: item.title[0],
+                grade: grade,
+                price: parseFloat(item.sellingStatus[0].currentPrice[0].__value__),
+                psaValue: psaValue,
+                dealScore: (psaValue - parseFloat(item.sellingStatus[0].currentPrice[0].__value__)) / psaValue,
+                imageUrl: item.galleryURL[0],
+                listingUrl: item.viewItemURL[0],
+                sellerRating: parseInt(item.sellerInfo[0].feedbackScore[0]),
+                shippingPrice: parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0),
+                listingType: 'FixedPrice',
+                saleProbability: saleProbability
+            }));
+            allDeals = [...allDeals, ...deals];
+        }
+        allDeals.sort((a, b) => b.dealScore - a.dealScore);
+        res.json(allDeals.slice(0, 50));
+    } catch (error) {
+        console.error('Error fetching top deals:', error);
+        res.status(500).json({ error: 'Failed to fetch top deals.' });
+    }
+});
+
 app.post('/api/listing-analysis', async (req, res) => {
     const { title } = req.body;
     if (!title) {
