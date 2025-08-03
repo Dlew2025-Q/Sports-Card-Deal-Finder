@@ -16,7 +16,6 @@ const PRICES_DB_PATH = path.join(__dirname, 'psa_prices.json');
 const GEMINI_API_KEY = ''; // The environment will provide this
 
 // --- CORS Configuration ---
-// This is the crucial fix. It explicitly allows your front-end's URL.
 const corsOptions = {
   origin: 'https://sports-card-deal-finder.onrender.com', // Your deployed front-end URL
   optionsSuccessStatus: 200
@@ -72,11 +71,9 @@ app.post('/api/run-scrape-job', async (req, res) => {
                 console.log(`Analyzing: ${key}`);
                 await new Promise(resolve => setTimeout(resolve, 2000)); // Rate limit
 
-                // 1. Scrape PSA Value
                 const psaValue = await scrapePsaValue(card.name, grade);
                 if (!psaValue) continue;
 
-                // 2. Fetch Sales History from eBay
                 const keywords = `${card.name} ${grade}`;
                 const ebayUrl = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
                 const ebayResponse = await fetch(ebayUrl);
@@ -87,9 +84,8 @@ app.post('/api/run-scrape-job', async (req, res) => {
                     price: parseFloat(item.sellingStatus[0].currentPrice[0].__value__)
                 }));
 
-                let saleProbability = "Slow"; // Default
+                let saleProbability = "Slow";
                 if (salesHistory.length >= 3) {
-                    // 3. Get AI Analysis if there's enough data
                     const prompt = `You are a sports card investment analyst. Classify the market velocity of a card based on its recent sales history. Respond with only a single word: "Quick", "Medium", or "Slow". "Quick" means multiple sales per week. "Medium" means about one sale per week. "Slow" means less than one sale per week. Card: ${card.name}, Grade: ${grade}, Recent Sales: ${salesHistory.length} sales in the last few weeks. Classification:`;
                     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
                     const geminiResponse = await fetch(geminiUrl, {
@@ -124,9 +120,18 @@ app.post('/api/run-scrape-job', async (req, res) => {
 
 app.get('/api/top-deals', async (req, res) => {
     const { minPrice, maxPrice } = req.query;
+    let pricesDb;
     try {
         const pricesData = await fs.readFile(PRICES_DB_PATH, 'utf8');
-        const pricesDb = JSON.parse(pricesData);
+        pricesDb = JSON.parse(pricesData);
+    } catch (error) {
+        // ** THE FIX IS HERE **
+        // If the file doesn't exist, return an empty array instead of crashing.
+        console.log('psa_prices.json not found. Run the scrape job to create it.');
+        return res.json([]);
+    }
+
+    try {
         let allDeals = [];
         for (const key in pricesDb) {
             const [cardName, grade] = key.split(' | ');
