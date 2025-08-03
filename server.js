@@ -1,5 +1,5 @@
 const express = require('express');
-const fetch = require('node-fetch'); // <-- THIS LINE FIXES THE ERROR
+const fetch = require('node-fetch');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cors = require('cors');
@@ -15,7 +15,14 @@ const HOTLIST_PATH = path.join(__dirname, 'hotlist.json');
 const PRICES_DB_PATH = path.join(__dirname, 'psa_prices.json');
 const GEMINI_API_KEY = ''; // The environment will provide this
 
-app.use(cors());
+// --- CORS Configuration ---
+// This is the crucial fix. It explicitly allows your front-end's URL.
+const corsOptions = {
+  origin: 'https://sports-card-deal-finder.onrender.com', // Your deployed front-end URL
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
 app.use(express.json());
 
 // --- Helper Functions ---
