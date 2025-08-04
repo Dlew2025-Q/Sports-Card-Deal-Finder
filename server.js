@@ -48,7 +48,7 @@ app.get('/api/grading-opportunities', async (req, res) => {
 
         for (const card of hotlist) {
             for (const grade of card.grades) {
-                // Use the base name for more flexible searching
+                // ** THE FIX IS HERE: Using simpler, more flexible search terms **
                 const rawKeywords = `${card.name} -psa -bgs -sgc -cgc`;
                 const gradedKeywords = `${card.name} ${grade}`;
 
