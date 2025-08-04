@@ -1,7 +1,5 @@
 const express = require('express');
 const fetch = require('node-fetch');
-const axios = require('axios');
-const cheerio = require('cheerio');
 const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
@@ -12,205 +10,122 @@ const PORT = process.env.PORT || 3001;
 // --- Configuration ---
 const EBAY_APP_ID = 'DarrenLe-SportsCa-SBX-a63bb60a4-d55b26f0';
 const HOTLIST_PATH = path.join(__dirname, 'hotlist.json');
-const PRICES_DB_PATH = path.join(__dirname, 'psa_prices.json');
-const GEMINI_API_KEY = ''; // The environment will provide this
+const GRADING_FEE = 30; // Estimated cost to get a card graded
+const EBAY_FEE_PERCENTAGE = 0.13; // Approx. 13% for eBay fees
 
-// --- CORS Configuration ---
-const corsOptions = {
-  origin: 'https://sports-card-deal-finder.onrender.com', // Your deployed front-end URL
-  optionsSuccessStatus: 200
-};
-app.use(cors(corsOptions));
-
+app.use(cors());
 app.use(express.json());
 
-// --- Helper Functions ---
-
-const scrapePsaValue = async (cardName, grade) => {
-    const psaUrl = `https://www.psacard.com/priceguide/search?q=${encodeURIComponent(cardName)}`;
+// --- Helper: Fetch Completed eBay Items ---
+const fetchCompletedItems = async (keywords) => {
+    const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
     try {
-        const { data } = await axios.get(psaUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-        });
-        const $ = cheerio.load(data);
-        let psaValue = null;
-        $('table.price-guide-table tbody tr').each((i, elem) => {
-            const rowGrade = $(elem).find('td').eq(0).text().trim();
-            if (rowGrade === grade) {
-                const priceText = $(elem).find('td').eq(1).text().trim();
-                psaValue = parseFloat(priceText.replace(/[$,]/g, ''));
-                return false;
-            }
-        });
-        return psaValue;
+        const response = await fetch(url);
+        const data = await response.json();
+        return data?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item || [];
     } catch (error) {
-        console.error(`Error scraping for ${cardName} (${grade}):`, error.message);
-        return null;
+        console.error(`Error fetching completed items for "${keywords}":`, error);
+        return [];
     }
 };
 
 // --- API Endpoints ---
 
-// NEW: Health Check Endpoint
+// Health Check
 app.get('/', (req, res) => {
-    res.send('Card Deal Finder server is running!');
+    res.send('Grading Opportunity server is running!');
 });
 
-
-app.post('/api/run-scrape-job', async (req, res) => {
-    console.log('Starting PSA price and sales velocity scraping job...');
+/**
+ * Analyzes the hotlist to find profitable grading opportunities.
+ */
+app.get('/api/grading-opportunities', async (req, res) => {
+    console.log('Fetching grading opportunities...');
     try {
         const hotlistData = await fs.readFile(HOTLIST_PATH, 'utf8');
         const hotlist = JSON.parse(hotlistData);
-        let pricesDb = {};
-        
-        try {
-            const existingData = await fs.readFile(PRICES_DB_PATH, 'utf8');
-            pricesDb = JSON.parse(existingData);
-        } catch (e) {
-            console.log("Price database not found, creating a new one.");
-        }
+        let opportunities = [];
 
         for (const card of hotlist) {
             for (const grade of card.grades) {
-                const key = `${card.name} | ${grade}`;
-                console.log(`Analyzing: ${key}`);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Rate limit
+                // Keywords for raw and graded searches
+                const rawKeywords = `${card.name} -psa -bgs -sgc -cgc`;
+                const gradedKeywords = `${card.name} ${grade}`;
 
-                const psaValue = await scrapePsaValue(card.name, grade);
-                if (!psaValue) continue;
+                // Fetch both sets of sales data in parallel
+                const [soldRaw, soldGraded] = await Promise.all([
+                    fetchCompletedItems(rawKeywords),
+                    fetchCompletedItems(gradedKeywords)
+                ]);
 
-                const keywords = `${card.name} ${grade}`;
-                const ebayUrl = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
-                const ebayResponse = await fetch(ebayUrl);
-                const ebayData = await ebayResponse.json();
-                const items = ebayData?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item || [];
-                const salesHistory = items.slice(0, 10).map(item => ({
-                    date: item.sellingStatus[0].endTime[0].split('T')[0],
-                    price: parseFloat(item.sellingStatus[0].currentPrice[0].__value__)
-                }));
-
-                let saleProbability = "Slow";
-                if (salesHistory.length >= 3) {
-                    const prompt = `You are a sports card investment analyst. Classify the market velocity of a card based on its recent sales history. Respond with only a single word: "Quick", "Medium", or "Slow". "Quick" means multiple sales per week. "Medium" means about one sale per week. "Slow" means less than one sale per week. Card: ${card.name}, Grade: ${grade}, Recent Sales: ${salesHistory.length} sales in the last few weeks. Classification:`;
-                    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
-                    const geminiResponse = await fetch(geminiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                    });
-                    if (geminiResponse.ok) {
-                        const geminiResult = await geminiResponse.json();
-                        const analysis = geminiResult.candidates[0].content.parts[0].text.trim();
-                        if (["Quick", "Medium", "Slow"].includes(analysis)) {
-                            saleProbability = analysis;
-                        }
-                    }
+                // Ensure we have enough data for a reliable average
+                if (soldRaw.length < 3 || soldGraded.length < 3) {
+                    continue;
                 }
+
+                const totalRawPrice = soldRaw.reduce((acc, item) => acc + parseFloat(item.sellingStatus[0].currentPrice[0].__value__), 0);
+                const avgRawPrice = totalRawPrice / soldRaw.length;
+
+                const totalGradedPrice = soldGraded.reduce((acc, item) => acc + parseFloat(item.sellingStatus[0].currentPrice[0].__value__), 0);
+                const avgPsaPrice = totalGradedPrice / soldGraded.length;
                 
-                pricesDb[key] = {
-                    price: psaValue,
-                    saleProbability: saleProbability,
-                    lastUpdated: new Date().toISOString()
-                };
+                const ebayFees = avgPsaPrice * EBAY_FEE_PERCENTAGE;
+                const potentialProfit = avgPsaPrice - avgRawPrice - GRADING_FEE - ebayFees;
+
+                if (potentialProfit > 0) {
+                    opportunities.push({
+                        cardName: card.name,
+                        grade: grade,
+                        avgRawPrice: avgRawPrice,
+                        avgPsaPrice: avgPsaPrice,
+                        potentialProfit: potentialProfit,
+                        imageUrl: soldGraded[0].galleryURL[0] // Use an image from a graded listing
+                    });
+                }
             }
         }
-        await fs.writeFile(PRICES_DB_PATH, JSON.stringify(pricesDb, null, 2));
-        console.log('PSA price scraping job completed successfully.');
-        res.status(200).json({ message: 'Scraping job completed.', data: pricesDb });
+
+        // Sort by the highest potential profit
+        opportunities.sort((a, b) => b.potentialProfit - a.potentialProfit);
+        res.json(opportunities);
+
     } catch (error) {
-        console.error('Error running scrape job:', error);
-        res.status(500).json({ error: 'Failed to run scraping job.' });
+        console.error('Error fetching grading opportunities:', error);
+        res.status(500).json({ error: 'Failed to fetch grading opportunities.' });
     }
 });
 
-app.get('/api/top-deals', async (req, res) => {
-    const { minPrice, maxPrice } = req.query;
-    let pricesDb;
-    try {
-        const pricesData = await fs.readFile(PRICES_DB_PATH, 'utf8');
-        pricesDb = JSON.parse(pricesData);
-    } catch (error) {
-        console.log('psa_prices.json not found. Run the scrape job to create it.');
-        return res.json([]);
+/**
+ * Fetches live, raw listings for a specific card.
+ */
+app.get('/api/raw-listings', async (req, res) => {
+    const { cardName } = req.query;
+    if (!cardName) {
+        return res.status(400).json({ error: 'Card name is required.' });
     }
 
-    try {
-        let allDeals = [];
-        for (const key in pricesDb) {
-            const [cardName, grade] = key.split(' | ');
-            const { price: psaValue, saleProbability } = pricesDb[key];
-            const keywords = `${cardName} ${grade}`;
-            let itemFilterIndex = 0;
-            let url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(${itemFilterIndex}).name=ListingType&itemFilter(${itemFilterIndex}).value=FixedPrice`;
-            itemFilterIndex++;
-            if (minPrice) {
-                url += `&itemFilter(${itemFilterIndex}).name=MinPrice&itemFilter(${itemFilterIndex}).value=${minPrice}&itemFilter(${itemFilterIndex}).paramName=Currency&itemFilter(${itemFilterIndex}).paramValue=USD`;
-                itemFilterIndex++;
-            }
-            if (maxPrice) {
-                url += `&itemFilter(${itemFilterIndex}).name=MaxPrice&itemFilter(${itemFilterIndex}).value=${maxPrice}&itemFilter(${itemFilterIndex}).paramName=Currency&itemFilter(${itemFilterIndex}).paramValue=USD`;
-                itemFilterIndex++;
-            }
-            const ebayResponse = await fetch(url);
-            const data = await ebayResponse.json();
-            const items = data?.findItemsByKeywordsResponse?.[0]?.searchResult?.[0]?.item || [];
-            const deals = items.map(item => ({
-                id: item.itemId[0],
-                title: item.title[0],
-                grade: grade,
-                price: parseFloat(item.sellingStatus[0].currentPrice[0].__value__),
-                psaValue: psaValue,
-                dealScore: (psaValue - parseFloat(item.sellingStatus[0].currentPrice[0].__value__)) / psaValue,
-                imageUrl: item.galleryURL[0],
-                listingUrl: item.viewItemURL[0],
-                sellerRating: parseInt(item.sellerInfo[0].feedbackScore[0]),
-                shippingPrice: parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0),
-                listingType: 'FixedPrice',
-                saleProbability: saleProbability
-            }));
-            allDeals = [...allDeals, ...deals];
-        }
-        allDeals.sort((a, b) => b.dealScore - a.dealScore);
-        res.json(allDeals.slice(0, 50));
-    } catch (error) {
-        console.error('Error fetching top deals:', error);
-        res.status(500).json({ error: 'Failed to fetch top deals.' });
-    }
-});
-
-app.post('/api/listing-analysis', async (req, res) => {
-    const { title } = req.body;
-    if (!title) {
-        return res.status(400).json({ error: 'Listing title is required.' });
-    }
+    const keywords = `${cardName} -psa -bgs -sgc -cgc`;
+    const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=ListingType&itemFilter(0).value=FixedPrice`;
 
     try {
-        const prompt = `You are a sports card expert. Analyze the following eBay listing title for any potential red flags that might explain a low price. Check for terms like "cracked slab", "qualifier", "(OC)", "off-center", "miscut", "scratches", "chipped", or any other words that suggest a defect. If you find any, list them. If not, respond with "No obvious issues found in title.".
-
-        Title: "${title}"
-
-        Analysis:`;
+        const response = await fetch(url);
+        const data = await response.json();
+        const items = data?.findItemsByKeywordsResponse?.[0]?.searchResult?.[0]?.item || [];
         
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
-        const geminiResponse = await fetch(geminiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-        });
+        const listings = items.map(item => ({
+            id: item.itemId[0],
+            title: item.title[0],
+            price: parseFloat(item.sellingStatus[0].currentPrice[0].__value__),
+            imageUrl: item.galleryURL[0],
+            listingUrl: item.viewItemURL[0],
+            sellerRating: parseInt(item.sellerInfo[0].feedbackScore[0]),
+            shippingPrice: parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0),
+        }));
 
-        if (!geminiResponse.ok) {
-            throw new Error('Gemini API request failed');
-        }
-
-        const geminiResult = await geminiResponse.json();
-        const analysis = geminiResult.candidates[0].content.parts[0].text;
-        
-        res.json({ analysis });
-
+        res.json(listings);
     } catch (error) {
-        console.error('AI Analysis Error:', error);
-        res.status(500).json({ error: 'Failed to generate AI analysis.' });
+        console.error('Error fetching raw listings:', error);
+        res.status(500).json({ error: 'Failed to fetch raw listings.' });
     }
 });
 
