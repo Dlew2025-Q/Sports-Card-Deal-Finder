@@ -1,5 +1,5 @@
 const express = require('express');
-const fetch = require('node-fetch');
+const fetch = require('node-fetch'); // <-- THIS LINE FIXES THE ERROR
 const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
@@ -9,10 +9,17 @@ const PORT = process.env.PORT || 3001;
 
 // --- Configuration ---
 const EBAY_APP_ID = 'DarrenLe-SportsCa-SBX-a63bb60a4-d55b26f0';
+const HOTLIST_PATH = path.join(__dirname, 'hotlist.json');
 const GRADING_FEE = 30; // Estimated cost to get a card graded
 const EBAY_FEE_PERCENTAGE = 0.13; // Approx. 13% for eBay fees
 
-app.use(cors());
+// --- CORS Configuration ---
+const corsOptions = {
+  origin: 'https://sports-card-deal-finder.onrender.com',
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
 app.use(express.json());
 
 // --- Helper: Fetch Completed eBay Items ---
@@ -30,50 +37,17 @@ const fetchCompletedItems = async (keywords) => {
 
 // --- API Endpoints ---
 
-// Health Check
 app.get('/', (req, res) => {
     res.send('Grading Opportunity server is running!');
 });
 
-/**
- * Analyzes the hotlist to find profitable grading opportunities.
- */
 app.get('/api/grading-opportunities', async (req, res) => {
-    const { year, sport } = req.query;
-    if (!year || !sport) {
-        return res.status(400).json({ error: 'Year and sport are required.' });
-    }
-    console.log(`Fetching opportunities for ${year} ${sport}...`);
-
+    console.log('Fetching grading opportunities...');
     try {
-        // Step 1: Find the most popular players for the given year/sport
-        const popularCardsKeywords = `${year} ${sport} psa`;
-        const popularCards = await fetchCompletedItems(popularCardsKeywords);
-        
-        const playerCounts = {};
-        popularCards.forEach(item => {
-            // A simple way to extract player names. This could be improved.
-            const title = item.title[0].toLowerCase();
-            const match = title.match(new RegExp(`\\b${year}\\b\\s(.*?)\\s(rc|#)`));
-            if (match && match[1]) {
-                const playerName = match[1].split(' ').slice(0, 2).join(' ');
-                if (playerName.length > 4) { // Filter out generic terms
-                    playerCounts[playerName] = (playerCounts[playerName] || 0) + 1;
-                }
-            }
-        });
-
-        const hotlist = Object.entries(playerCounts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10) // Analyze the top 10 most traded players
-            .map(entry => ({ name: `${year} ${entry[0]}`, grades: ['PSA 9'] }));
-
-        if (hotlist.length === 0) {
-            return res.json([]);
-        }
-
-        // Step 2: Analyze each popular card for profit potential
+        const hotlistData = await fs.readFile(HOTLIST_PATH, 'utf8');
+        const hotlist = JSON.parse(hotlistData);
         let opportunities = [];
+
         for (const card of hotlist) {
             for (const grade of card.grades) {
                 const rawKeywords = `${card.name} -psa -bgs -sgc -cgc`;
@@ -121,9 +95,6 @@ app.get('/api/grading-opportunities', async (req, res) => {
     }
 });
 
-/**
- * Fetches live, raw listings for a specific card.
- */
 app.get('/api/raw-listings', async (req, res) => {
     const { cardName } = req.query;
     if (!cardName) {
