@@ -8,7 +8,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // --- Configuration ---
-const EBAY_APP_ID = 'DarrenLe-SportsCa-SBX-a63bb60a4-d55b26f0';
+// UPDATED: Using your live Production App ID
+const EBAY_APP_ID = 'DarrenLe-SportsCa-PRD-d3c53308d-d7814f5e'; 
 const HOTLIST_PATH = path.join(__dirname, 'hotlist.json');
 const GRADING_FEE = 30;
 const EBAY_FEE_PERCENTAGE = 0.13;
@@ -23,8 +24,8 @@ app.use(express.json());
 
 // --- Helper: Fetch Completed eBay Items ---
 const fetchCompletedItems = async (keywords) => {
-    // CORRECTED: Using the sandbox URL
-    const url = `https://svcs.sandbox.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
+    // This is the live production URL
+    const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
     try {
         const response = await fetch(url);
         const data = await response.json();
@@ -63,7 +64,7 @@ app.get('/api/grading-opportunities', async (req, res) => {
                     continue;
                 }
                 
-                let avgRawAcquisitionCost = 1.00; // Default to $1 if no raw sales are found
+                let avgRawAcquisitionCost = 1.00;
 
                 if (soldRaw.length > 0) {
                     const totalRawAcquisitionCost = soldRaw.reduce((acc, item) => {
@@ -109,8 +110,8 @@ app.get('/api/raw-listings', async (req, res) => {
     }
 
     const keywords = `${cardName} -psa -bgs -sgc -cgc`;
-    // CORRECTED: Using the sandbox URL
-    const url = `https://svcs.sandbox.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=ListingType&itemFilter(0).value=FixedPrice`;
+    // This is the live production URL
+    const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=ListingType&itemFilter(0).value=FixedPrice`;
 
     try {
         const response = await fetch(url);
@@ -136,5 +137,5 @@ app.get('/api/raw-listings', async (req, res) => {
 
 
 app.listen(PORT, () => {
-    console.log(`SERVER VERSION 2.1 IS LIVE on port ${PORT}`);
+    console.log(`SERVER VERSION 2.2 (PRODUCTION) IS LIVE on port ${PORT}`);
 });
