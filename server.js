@@ -48,6 +48,7 @@ app.get('/api/grading-opportunities', async (req, res) => {
 
         for (const card of hotlist) {
             for (const grade of card.grades) {
+                // Use the base name for more flexible searching
                 const rawKeywords = `${card.name} -psa -bgs -sgc -cgc`;
                 const gradedKeywords = `${card.name} ${grade}`;
 
@@ -130,5 +131,5 @@ app.get('/api/raw-listings', async (req, res) => {
 
 
 app.listen(PORT, () => {
-    console.log(`SERVER VERSION 4.0 (HOTLIST) IS LIVE on port ${PORT}`);
+    console.log(`SERVER VERSION 5.0 (HOTLIST) IS LIVE on port ${PORT}`);
 });
