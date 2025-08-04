@@ -23,7 +23,8 @@ app.use(express.json());
 
 // --- Helper: Fetch Completed eBay Items ---
 const fetchCompletedItems = async (keywords) => {
-    const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
+    // CORRECTED: Using the sandbox URL
+    const url = `https://svcs.sandbox.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
     try {
         const response = await fetch(url);
         const data = await response.json();
@@ -57,8 +58,7 @@ app.get('/api/grading-opportunities', async (req, res) => {
                 ]);
 
                 console.log(`For "${card.name} ${grade}": Found ${soldRaw.length} raw sales and ${soldGraded.length} graded sales.`);
-
-                // Loosened filter: only require a graded sale to proceed.
+                
                 if (soldGraded.length < 1) {
                     continue;
                 }
@@ -109,7 +109,8 @@ app.get('/api/raw-listings', async (req, res) => {
     }
 
     const keywords = `${cardName} -psa -bgs -sgc -cgc`;
-    const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=ListingType&itemFilter(0).value=FixedPrice`;
+    // CORRECTED: Using the sandbox URL
+    const url = `https://svcs.sandbox.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=ListingType&itemFilter(0).value=FixedPrice`;
 
     try {
         const response = await fetch(url);
@@ -135,5 +136,5 @@ app.get('/api/raw-listings', async (req, res) => {
 
 
 app.listen(PORT, () => {
-    console.log(`SERVER VERSION 2.0 IS LIVE on port ${PORT}`);
+    console.log(`SERVER VERSION 2.1 IS LIVE on port ${PORT}`);
 });
