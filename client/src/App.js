@@ -1,8 +1,40 @@
+/* eslint-disable no-undef */
 import React, { useState, useEffect } from 'react';
-import { ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, Search } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { Star, ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, Search } from 'lucide-react';
 
 // --- Configuration ---
 const API_BASE_URL = 'https://sports-card-deal-server.onrender.com'; 
+
+// --- Firebase Configuration ---
+let firebaseConfig = {};
+try {
+    if (process.env.REACT_APP_FIREBASE_CONFIG) {
+        firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG);
+    } else if (typeof __firebase_config !== 'undefined') {
+        firebaseConfig = JSON.parse(__firebase_config);
+    }
+} catch (e) {
+    console.error("Could not parse Firebase config:", e);
+}
+
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- Initialize Firebase ---
+let app;
+let auth;
+let db;
+if (firebaseConfig.apiKey) {
+    try {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+    } catch (e) {
+        console.error("Error initializing Firebase:", e);
+    }
+}
 
 // --- Helper Components ---
 
