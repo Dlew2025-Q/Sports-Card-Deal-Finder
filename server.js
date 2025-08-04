@@ -9,7 +9,6 @@ const PORT = process.env.PORT || 3001;
 
 // --- Configuration ---
 const EBAY_APP_ID = 'DarrenLe-SportsCa-PRD-d3c53308d-d7814f5e'; 
-const HOTLIST_PATH = path.join(__dirname, 'hotlist.json');
 const GRADING_FEE = 30;
 const EBAY_FEE_PERCENTAGE = 0.13;
 
@@ -48,13 +47,12 @@ app.get('/api/grading-opportunities', async (req, res) => {
 
     try {
         // Step 1: Find the most popular players for the given year/sport
-        const popularCardsKeywords = `${year} ${sport} rc`; // Focus on rookie cards
+        const popularCardsKeywords = `${year} ${sport} card`; // Broadened search
         const popularCards = await fetchCompletedItems(popularCardsKeywords);
         
         const playerCounts = {};
         popularCards.forEach(item => {
             const title = item.title[0].toLowerCase();
-            // A more robust regex to capture player names
             const match = title.match(new RegExp(`\\b${year}\\b\\s(?:panini|topps|upper deck|fleer)?\\s(?:[a-z]+\\s)?([a-z'’]+\\s[a-z'’]+)`));
             if (match && match[1]) {
                 const playerName = match[1].split(' ').map(name => name.charAt(0).toUpperCase() + name.slice(1)).join(' ');
@@ -66,7 +64,7 @@ app.get('/api/grading-opportunities', async (req, res) => {
 
         const hotlist = Object.entries(playerCounts)
             .sort((a, b) => b[1] - a[1])
-            .slice(0, 10) // Analyze the top 10 most traded players
+            .slice(0, 10) 
             .map(entry => ({ name: `${year} ${entry[0]}`, grades: ['PSA 9'] }));
 
         if (hotlist.length === 0) {
@@ -78,8 +76,10 @@ app.get('/api/grading-opportunities', async (req, res) => {
         let opportunities = [];
         for (const card of hotlist) {
             for (const grade of card.grades) {
-                const rawKeywords = `${card.name} rc -psa -bgs -sgc -cgc`;
-                const gradedKeywords = `${card.name} rc ${grade}`;
+                // ** THE FIX IS HERE **
+                // Removed "rc" to make the search less strict
+                const rawKeywords = `${card.name} -psa -bgs -sgc -cgc`;
+                const gradedKeywords = `${card.name} ${grade}`;
 
                 const [soldRaw, soldGraded] = await Promise.all([
                     fetchCompletedItems(rawKeywords),
@@ -133,7 +133,7 @@ app.get('/api/raw-listings', async (req, res) => {
         return res.status(400).json({ error: 'Card name is required.' });
     }
 
-    const keywords = `${cardName} rc -psa -bgs -sgc -cgc`;
+    const keywords = `${cardName} -psa -bgs -sgc -cgc`;
     const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=ListingType&itemFilter(0).value=FixedPrice`;
 
     try {
@@ -160,5 +160,5 @@ app.get('/api/raw-listings', async (req, res) => {
 
 
 app.listen(PORT, () => {
-    console.log(`SERVER VERSION 3.0 (AUTOMATED) IS LIVE on port ${PORT}`);
+    console.log(`SERVER VERSION 3.1 (AUTOMATED) IS LIVE on port ${PORT}`);
 });
