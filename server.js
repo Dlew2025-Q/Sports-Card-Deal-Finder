@@ -25,11 +25,14 @@ app.use(express.json());
 const fetchCompletedItems = async (keywords) => {
     const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
     try {
+        console.log(`[eBay API Request] Searching for completed items with keywords: "${keywords}"`);
         const response = await fetch(url);
         const data = await response.json();
-        return data?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item || [];
+        const items = data?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item || [];
+        console.log(`[eBay API Response] Found ${items.length} completed items for "${keywords}"`);
+        return items;
     } catch (error) {
-        console.error(`Error fetching completed items for "${keywords}":`, error);
+        console.error(`[eBay API Error] Failed to fetch completed items for "${keywords}":`, error);
         return [];
     }
 };
@@ -55,8 +58,6 @@ app.get('/api/grading-opportunities', async (req, res) => {
                     fetchCompletedItems(rawKeywords),
                     fetchCompletedItems(gradedKeywords)
                 ]);
-
-                console.log(`For "${card.name} ${grade}": Found ${soldRaw.length} raw sales and ${soldGraded.length} graded sales.`);
                 
                 if (soldRaw.length < 1 || soldGraded.length < 1) {
                     continue;
@@ -89,6 +90,7 @@ app.get('/api/grading-opportunities', async (req, res) => {
         }
 
         opportunities.sort((a, b) => b.potentialProfit - a.potentialProfit);
+        console.log(`Found ${opportunities.length} total opportunities.`);
         res.json(opportunities);
 
     } catch (error) {
@@ -130,5 +132,5 @@ app.get('/api/raw-listings', async (req, res) => {
 
 
 app.listen(PORT, () => {
-    console.log(`SERVER VERSION 5.0 (HOTLIST) IS LIVE on port ${PORT}`);
+    console.log(`SERVER VERSION 5.1 (DIAGNOSTIC LOGS) IS LIVE on port ${PORT}`);
 });
