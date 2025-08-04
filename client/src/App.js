@@ -2,14 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import { Star, ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, Search } from 'lucide-react';
 
 // --- Configuration ---
 const API_BASE_URL = 'https://sports-card-deal-server.onrender.com'; 
-const currentYear = new Date().getFullYear();
-const years = Array.from({ length: 50 }, (_, i) => currentYear - i);
-const sports = ['Baseball', 'Basketball', 'Football', 'Hockey', 'Soccer'];
 
 // --- Firebase Configuration ---
 let firebaseConfig = {};
@@ -22,8 +19,6 @@ try {
 } catch (e) {
     console.error("Could not parse Firebase config:", e);
 }
-
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Initialize Firebase ---
 let app;
@@ -115,22 +110,16 @@ export default function App() {
     const [selectedCard, setSelectedCard] = useState(null);
     const [opportunities, setOpportunities] = useState([]);
     const [listings, setListings] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-
-    const [yearFilter, setYearFilter] = useState(currentYear - 1);
-    const [sportFilter, setSportFilter] = useState('Baseball');
 
     // --- Fetch Grading Opportunities ---
     const fetchOpportunities = async () => {
-        if (!yearFilter || !sportFilter) return;
         setLoading(true);
         setError(null);
         setView('opportunities');
         try {
             const url = new URL(`${API_BASE_URL}/api/grading-opportunities`);
-            url.searchParams.append('year', yearFilter);
-            url.searchParams.append('sport', sportFilter);
             const response = await fetch(url);
             if (!response.ok) throw new Error('Network response was not ok');
             const data = await response.json();
@@ -142,6 +131,10 @@ export default function App() {
             setLoading(false);
         }
     };
+    
+    useEffect(() => {
+        fetchOpportunities();
+    }, []);
 
     // --- Fetch live listings when a card is selected ---
     const handleSelectCard = async (card) => {
@@ -170,15 +163,6 @@ export default function App() {
         setListings([]);
     };
 
-    const FilterSelect = ({ value, onChange, options, placeholder }) => (
-        <div className="relative">
-            <select value={value} onChange={onChange} className="w-full bg-gray-800 border-2 border-gray-700 rounded-full py-3 px-4 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all">
-                {placeholder && <option value="">{placeholder}</option>}
-                {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-            </select>
-        </div>
-    );
-
     return (
         <div className="bg-gray-900 min-h-screen font-sans text-gray-200 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
@@ -188,14 +172,10 @@ export default function App() {
                 </header>
 
                 <div className="mb-8 max-w-xl mx-auto space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <FilterSelect value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} options={years} />
-                        <FilterSelect value={sportFilter} onChange={(e) => setSportFilter(e.target.value)} options={sports} />
-                        <button onClick={fetchOpportunities} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-full flex items-center justify-center transition-colors duration-300">
-                            <Search className="w-5 h-5 mr-2" />
-                            Find Opportunities
-                        </button>
-                    </div>
+                    <button onClick={fetchOpportunities} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-full flex items-center justify-center transition-colors duration-300">
+                        <Search className="w-5 h-5 mr-2" />
+                        Refresh Opportunities
+                    </button>
                 </div>
 
                 {view === 'listings' && (
@@ -212,7 +192,7 @@ export default function App() {
                     <div>
                         {view === 'opportunities' && (
                             <>
-                                {opportunities.length === 0 && <div className="text-center col-span-full py-12"><p className="text-gray-400 text-lg">No profitable grading opportunities found. Try a different year or sport.</p></div>}
+                                {opportunities.length === 0 && <div className="text-center col-span-full py-12"><p className="text-gray-400 text-lg">No profitable grading opportunities found for cards on the hotlist.</p></div>}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                     {opportunities.map(item => <OpportunityCard key={`${item.cardName}-${item.grade}`} item={item} onSelect={handleSelectCard} />)}
                                 </div>
