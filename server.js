@@ -63,20 +63,28 @@ app.get('/api/grading-opportunities', async (req, res) => {
                     continue;
                 }
 
-                const totalRawPrice = soldRaw.reduce((acc, item) => acc + parseFloat(item.sellingStatus[0].currentPrice[0].__value__), 0);
-                const avgRawPrice = totalRawPrice / soldRaw.length;
+                // ** UPDATED CALCULATION **
+                // Calculate the total acquisition cost (price + shipping) for raw cards.
+                const totalRawAcquisitionCost = soldRaw.reduce((acc, item) => {
+                    const price = parseFloat(item.sellingStatus[0].currentPrice[0].__value__);
+                    const shipping = parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0);
+                    return acc + price + shipping;
+                }, 0);
+                const avgRawAcquisitionCost = totalRawAcquisitionCost / soldRaw.length;
 
                 const totalGradedPrice = soldGraded.reduce((acc, item) => acc + parseFloat(item.sellingStatus[0].currentPrice[0].__value__), 0);
                 const avgPsaPrice = totalGradedPrice / soldGraded.length;
                 
                 const ebayFees = avgPsaPrice * EBAY_FEE_PERCENTAGE;
-                const potentialProfit = avgPsaPrice - avgRawPrice - GRADING_FEE - ebayFees;
+                // ** UPDATED CALCULATION **
+                // Use the full acquisition cost in the profit formula.
+                const potentialProfit = avgPsaPrice - avgRawAcquisitionCost - GRADING_FEE - ebayFees;
 
                 if (potentialProfit > 0) {
                     opportunities.push({
                         cardName: card.name,
                         grade: grade,
-                        avgRawPrice: avgRawPrice,
+                        avgRawPrice: avgRawAcquisitionCost, // This now represents the total cost
                         avgPsaPrice: avgPsaPrice,
                         potentialProfit: potentialProfit,
                         imageUrl: soldGraded[0].galleryURL[0] // Use an image from a graded listing
