@@ -10,6 +10,8 @@ const PORT = process.env.PORT || 3001;
 // --- Configuration ---
 const EBAY_APP_ID = 'DarrenLe-SportsCa-PRD-d3c53308d-d7814f5e'; 
 const HOTLIST_PATH = path.join(__dirname, 'hotlist.json');
+const GRADING_FEE = 30;
+const EBAY_FEE_PERCENTAGE = 0.13;
 
 // --- CORS Configuration ---
 const corsOptions = {
@@ -25,7 +27,7 @@ const fetchCompletedItems = async (keywords) => {
     try {
         const response = await fetch(url);
         const data = await response.json();
-        return data?.findItemsByKeywordsResponse?.[0]?.searchResult?.[0]?.item || [];
+        return data?.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item || [];
     } catch (error) {
         console.error(`Error fetching completed items for "${keywords}":`, error);
         return [];
@@ -34,69 +36,99 @@ const fetchCompletedItems = async (keywords) => {
 
 // --- API Endpoints ---
 app.get('/', (req, res) => {
-    res.send('Card Deal Finder server is running!');
+    res.send('Grading Opportunity server is running!');
 });
 
-app.get('/api/top-deals', async (req, res) => {
-    console.log('Fetching top deals from hotlist...');
+app.get('/api/grading-opportunities', async (req, res) => {
+    console.log('Fetching grading opportunities from hotlist...');
     try {
         const hotlistData = await fs.readFile(HOTLIST_PATH, 'utf8');
         const hotlist = JSON.parse(hotlistData);
-        let allDeals = [];
+        let opportunities = [];
 
         for (const card of hotlist) {
             for (const grade of card.grades) {
-                const keywords = `${card.name} ${grade}`;
+                const rawKeywords = `${card.name} -psa -bgs -sgc -cgc`;
+                const gradedKeywords = `${card.name} ${grade}`;
 
-                // Step 1: Get recent sales to find the average sale price
-                const soldItems = await fetchCompletedItems(keywords);
+                const [soldRaw, soldGraded] = await Promise.all([
+                    fetchCompletedItems(rawKeywords),
+                    fetchCompletedItems(gradedKeywords)
+                ]);
 
-                if (soldItems.length < 1) {
-                    console.log(`No recent sales found for "${keywords}", skipping.`);
+                console.log(`For "${card.name} ${grade}": Found ${soldRaw.length} raw sales and ${soldGraded.length} graded sales.`);
+                
+                if (soldRaw.length < 1 || soldGraded.length < 1) {
                     continue;
                 }
 
-                const totalSoldPrice = soldItems.reduce((acc, item) => acc + parseFloat(item.sellingStatus[0].currentPrice[0].__value__), 0);
-                const avgSalePrice = totalSoldPrice / soldItems.length;
+                const totalRawAcquisitionCost = soldRaw.reduce((acc, item) => {
+                    const price = parseFloat(item.sellingStatus[0].currentPrice[0].__value__);
+                    const shipping = parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0);
+                    return acc + price + shipping;
+                }, 0);
+                const avgRawAcquisitionCost = totalRawAcquisitionCost / soldRaw.length;
 
-                // Step 2: Find active "Buy It Now" listings for the same card
-                const activeItemsUrl = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=ListingType&itemFilter(0).value=FixedPrice`;
+                const totalGradedPrice = soldGraded.reduce((acc, item) => acc + parseFloat(item.sellingStatus[0].currentPrice[0].__value__), 0);
+                const avgPsaPrice = totalGradedPrice / soldGraded.length;
                 
-                const activeResponse = await fetch(activeItemsUrl);
-                const activeData = await activeResponse.json();
-                const activeItems = activeData?.findItemsByKeywordsResponse?.[0]?.searchResult?.[0]?.item || [];
+                const ebayFees = avgPsaPrice * EBAY_FEE_PERCENTAGE;
+                const potentialProfit = avgPsaPrice - avgRawAcquisitionCost - GRADING_FEE - ebayFees;
 
-                const deals = activeItems
-                    .map(item => {
-                        const price = parseFloat(item.sellingStatus[0].currentPrice[0].__value__);
-                        return {
-                            id: item.itemId[0],
-                            title: item.title[0],
-                            grade: grade,
-                            price: price,
-                            avgSalePrice: avgSalePrice,
-                            dealScore: (avgSalePrice - price) / avgSalePrice,
-                            imageUrl: item.galleryURL[0],
-                            listingUrl: item.viewItemURL[0],
-                            sellerRating: parseInt(item.sellerInfo[0].feedbackScore[0]),
-                            shippingPrice: parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0),
-                        };
-                    })
-                    .filter(deal => deal.price < avgSalePrice); // Only include listings priced below the average
-
-                allDeals = [...allDeals, ...deals];
+                if (potentialProfit > 0) {
+                    opportunities.push({
+                        cardName: card.name,
+                        grade: grade,
+                        avgRawPrice: avgRawAcquisitionCost, 
+                        avgPsaPrice: avgPsaPrice,
+                        potentialProfit: potentialProfit,
+                        imageUrl: soldGraded[0].galleryURL[0]
+                    });
+                }
             }
         }
 
-        allDeals.sort((a, b) => b.dealScore - a.dealScore);
-        res.json(allDeals);
+        opportunities.sort((a, b) => b.potentialProfit - a.potentialProfit);
+        res.json(opportunities);
 
     } catch (error) {
-        console.error('Error fetching top deals:', error);
-        res.status(500).json({ error: 'Failed to fetch top deals.' });
+        console.error('Error fetching grading opportunities:', error);
+        res.status(500).json({ error: 'Failed to fetch grading opportunities.' });
     }
 });
 
+app.get('/api/raw-listings', async (req, res) => {
+    const { cardName } = req.query;
+    if (!cardName) {
+        return res.status(400).json({ error: 'Card name is required.' });
+    }
+
+    const keywords = `${cardName} -psa -bgs -sgc -cgc`;
+    const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findItemsByKeywords&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=ListingType&itemFilter(0).value=FixedPrice`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        const items = data?.findItemsByKeywordsResponse?.[0]?.searchResult?.[0]?.item || [];
+        
+        const listings = items.map(item => ({
+            id: item.itemId[0],
+            title: item.title[0],
+            price: parseFloat(item.sellingStatus[0].currentPrice[0].__value__),
+            imageUrl: item.galleryURL[0],
+            listingUrl: item.viewItemURL[0],
+            sellerRating: parseInt(item.sellerInfo[0].feedbackScore[0]),
+            shippingPrice: parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0),
+        }));
+
+        res.json(listings);
+    } catch (error) {
+        console.error('Error fetching raw listings:', error);
+        res.status(500).json({ error: 'Failed to fetch raw listings.' });
+    }
+});
+
+
 app.listen(PORT, () => {
-    console.log(`SERVER VERSION 5.0 (FINAL) IS LIVE on port ${PORT}`);
+    console.log(`SERVER VERSION 4.0 (HOTLIST) IS LIVE on port ${PORT}`);
 });
