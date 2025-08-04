@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 import React, { useState, useEffect } from 'react';
 import { ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, Search } from 'lucide-react';
 
@@ -95,7 +96,7 @@ export default function App() {
             const data = await response.json();
             setOpportunities(data);
         } catch (err) {
-            setError('Failed to fetch grading opportunities. The server might be busy or the hotlist is empty.');
+            setError('Failed to fetch grading opportunities. The server might be busy or your hotlist is empty.');
             console.error(err);
         } finally {
             setLoading(false);
