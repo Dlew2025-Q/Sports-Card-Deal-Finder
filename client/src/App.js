@@ -3,10 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
-import { Star, ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, TrendingUp } from 'lucide-react';
+import { Star, ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, Search } from 'lucide-react';
 
 // --- Configuration ---
 const API_BASE_URL = 'http://localhost:3001'; 
+const currentYear = new Date().getFullYear();
+const years = Array.from({ length: 50 }, (_, i) => currentYear - i);
+const sports = ['Baseball', 'Basketball', 'Football', 'Hockey', 'Soccer'];
 
 // --- Firebase Configuration ---
 let firebaseConfig = {};
@@ -50,7 +53,7 @@ const OpportunityCard = ({ item, onSelect }) => {
                 <h3 className="text-lg font-bold text-white mb-3 flex-grow">{cardName}</h3>
                 <div className="space-y-2 text-sm">
                     <div className="flex justify-between items-center text-gray-400">
-                        <span>Avg. Raw Price:</span>
+                        <span>Avg. Raw Cost:</span>
                         <span className="font-bold text-white">${avgRawPrice.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center text-gray-400">
@@ -112,29 +115,33 @@ export default function App() {
     const [selectedCard, setSelectedCard] = useState(null);
     const [opportunities, setOpportunities] = useState([]);
     const [listings, setListings] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    // --- Fetch Grading Opportunities on initial load ---
-    useEffect(() => {
-        const fetchOpportunities = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                const url = new URL(`${API_BASE_URL}/api/grading-opportunities`);
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Network response was not ok');
-                const data = await response.json();
-                setOpportunities(data);
-            } catch (err) {
-                setError('Failed to fetch grading opportunities. The server might be busy or the hotlist is empty.');
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchOpportunities();
-    }, []);
+    const [yearFilter, setYearFilter] = useState(currentYear - 1);
+    const [sportFilter, setSportFilter] = useState('Baseball');
+
+    // --- Fetch Grading Opportunities ---
+    const fetchOpportunities = async () => {
+        if (!yearFilter || !sportFilter) return;
+        setLoading(true);
+        setError(null);
+        setView('opportunities');
+        try {
+            const url = new URL(`${API_BASE_URL}/api/grading-opportunities`);
+            url.searchParams.append('year', yearFilter);
+            url.searchParams.append('sport', sportFilter);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Network response was not ok');
+            const data = await response.json();
+            setOpportunities(data);
+        } catch (err) {
+            setError('Failed to fetch grading opportunities. The server might be busy.');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // --- Fetch live listings when a card is selected ---
     const handleSelectCard = async (card) => {
@@ -163,6 +170,15 @@ export default function App() {
         setListings([]);
     };
 
+    const FilterSelect = ({ value, onChange, options, placeholder }) => (
+        <div className="relative">
+            <select value={value} onChange={onChange} className="w-full bg-gray-800 border-2 border-gray-700 rounded-full py-3 px-4 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all">
+                {placeholder && <option value="">{placeholder}</option>}
+                {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+        </div>
+    );
+
     return (
         <div className="bg-gray-900 min-h-screen font-sans text-gray-200 p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
@@ -170,6 +186,17 @@ export default function App() {
                     <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-2">Sports Card <span className="text-indigo-400">Grading Opportunities</span></h1>
                     <p className="text-lg text-gray-400">Find raw cards with the highest potential profit after grading.</p>
                 </header>
+
+                <div className="mb-8 max-w-xl mx-auto space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <FilterSelect value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} options={years} />
+                        <FilterSelect value={sportFilter} onChange={(e) => setSportFilter(e.target.value)} options={sports} />
+                        <button onClick={fetchOpportunities} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-full flex items-center justify-center transition-colors duration-300">
+                            <Search className="w-5 h-5 mr-2" />
+                            Find Opportunities
+                        </button>
+                    </div>
+                </div>
 
                 {view === 'listings' && (
                     <button onClick={handleBack} className="mb-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-full flex items-center">
@@ -185,8 +212,7 @@ export default function App() {
                     <div>
                         {view === 'opportunities' && (
                             <>
-                                <h2 className="text-3xl font-bold text-white mb-6">Top Grading Opportunities</h2>
-                                {opportunities.length === 0 && <div className="text-center col-span-full py-12"><p className="text-gray-400 text-lg">No profitable grading opportunities found for cards on the hotlist.</p></div>}
+                                {opportunities.length === 0 && <div className="text-center col-span-full py-12"><p className="text-gray-400 text-lg">No profitable grading opportunities found. Try a different year or sport.</p></div>}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                     {opportunities.map(item => <OpportunityCard key={`${item.cardName}-${item.grade}`} item={item} onSelect={handleSelectCard} />)}
                                 </div>
