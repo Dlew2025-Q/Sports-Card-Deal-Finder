@@ -7,6 +7,9 @@ import { Star, ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, 
 
 // --- Configuration ---
 const API_BASE_URL = 'https://sports-card-deal-server.onrender.com'; 
+const currentYear = new Date().getFullYear();
+const years = Array.from({ length: 50 }, (_, i) => currentYear - i);
+const sports = ['Baseball', 'Basketball', 'Football', 'Hockey', 'Soccer'];
 
 // --- Firebase Configuration ---
 let firebaseConfig = {};
@@ -115,7 +118,7 @@ export default function App() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    const [yearFilter, setYearFilter] = useState(new Date().getFullYear() - 1);
+    const [yearFilter, setYearFilter] = useState(currentYear - 1);
     const [sportFilter, setSportFilter] = useState('Baseball');
 
     // --- Fetch Grading Opportunities ---
