@@ -1,5 +1,5 @@
 const express = require('express');
-const fetch = require('node-fetch'); // <-- The critical fix
+const fetch = require('node-fetch');
 const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
@@ -56,7 +56,13 @@ app.get('/api/grading-opportunities', async (req, res) => {
                     fetchCompletedItems(gradedKeywords)
                 ]);
 
-                if (soldRaw.length < 2 || soldGraded.length < 2) continue;
+                console.log(`For "${card.name} ${grade}": Found ${soldRaw.length} raw sales and ${soldGraded.length} graded sales.`);
+
+                // ** THE FIX IS HERE **
+                // Lowered the requirement to 1 sale each to work better with sandbox data.
+                if (soldRaw.length < 1 || soldGraded.length < 1) {
+                    continue;
+                }
 
                 const totalRawAcquisitionCost = soldRaw.reduce((acc, item) => {
                     const price = parseFloat(item.sellingStatus[0].currentPrice[0].__value__);
@@ -124,7 +130,7 @@ app.get('/api/raw-listings', async (req, res) => {
     }
 });
 
+
 app.listen(PORT, () => {
-    // This is the new diagnostic message
     console.log(`SERVER VERSION 2.0 IS LIVE on port ${PORT}`);
 });
