@@ -9,13 +9,13 @@ const PORT = process.env.PORT || 3001;
 
 // --- Configuration ---
 const EBAY_APP_ID = 'DarrenLe-SportsCa-SBX-a63bb60a4-d55b26f0';
-const GRADING_FEE = 30;
-const EBAY_FEE_PERCENTAGE = 0.13;
+const GRADING_FEE = 30; // Estimated cost to get a card graded
+const EBAY_FEE_PERCENTAGE = 0.13; // Approx. 13% for eBay fees
 
 app.use(cors());
 app.use(express.json());
 
-// --- Helper Functions ---
+// --- Helper: Fetch Completed eBay Items ---
 const fetchCompletedItems = async (keywords) => {
     const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
     try {
@@ -30,10 +30,14 @@ const fetchCompletedItems = async (keywords) => {
 
 // --- API Endpoints ---
 
+// Health Check
 app.get('/', (req, res) => {
     res.send('Grading Opportunity server is running!');
 });
 
+/**
+ * Analyzes the hotlist to find profitable grading opportunities.
+ */
 app.get('/api/grading-opportunities', async (req, res) => {
     const { year, sport } = req.query;
     if (!year || !sport) {
@@ -117,6 +121,9 @@ app.get('/api/grading-opportunities', async (req, res) => {
     }
 });
 
+/**
+ * Fetches live, raw listings for a specific card.
+ */
 app.get('/api/raw-listings', async (req, res) => {
     const { cardName } = req.query;
     if (!cardName) {
@@ -147,6 +154,7 @@ app.get('/api/raw-listings', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch raw listings.' });
     }
 });
+
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
