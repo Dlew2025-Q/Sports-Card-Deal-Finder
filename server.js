@@ -54,6 +54,7 @@ app.get('/api/grading-opportunities', async (req, res) => {
         const playerCounts = {};
         popularCards.forEach(item => {
             const title = item.title[0].toLowerCase();
+            // A more robust regex to capture player names
             const match = title.match(new RegExp(`\\b${year}\\b\\s(?:panini|topps|upper deck|fleer)?\\s(?:[a-z]+\\s)?([a-z'’]+\\s[a-z'’]+)`));
             if (match && match[1]) {
                 const playerName = match[1].split(' ').map(name => name.charAt(0).toUpperCase() + name.slice(1)).join(' ');
