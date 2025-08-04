@@ -6,8 +6,10 @@ import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from 'fi
 import { Star, ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, Search } from 'lucide-react';
 
 // --- Configuration ---
-// CORRECTED: This now points to your live server URL.
 const API_BASE_URL = 'https://sports-card-deal-server.onrender.com'; 
+const currentYear = new Date().getFullYear();
+const years = Array.from({ length: 50 }, (_, i) => currentYear - i);
+const sports = ['Baseball', 'Basketball', 'Football', 'Hockey', 'Soccer'];
 
 // --- Firebase Configuration ---
 let firebaseConfig = {};
@@ -140,11 +142,6 @@ export default function App() {
             setLoading(false);
         }
     };
-    
-    // Fetch on initial load
-    useEffect(() => {
-        fetchOpportunities();
-    }, []);
 
     // --- Fetch live listings when a card is selected ---
     const handleSelectCard = async (card) => {
