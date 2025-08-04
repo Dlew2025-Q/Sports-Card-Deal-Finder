@@ -9,14 +9,13 @@ const PORT = process.env.PORT || 3001;
 
 // --- Configuration ---
 const EBAY_APP_ID = 'DarrenLe-SportsCa-SBX-a63bb60a4-d55b26f0';
-const HOTLIST_PATH = path.join(__dirname, 'hotlist.json');
-const GRADING_FEE = 30; // Estimated cost to get a card graded
-const EBAY_FEE_PERCENTAGE = 0.13; // Approx. 13% for eBay fees
+const GRADING_FEE = 30;
+const EBAY_FEE_PERCENTAGE = 0.13;
 
 app.use(cors());
 app.use(express.json());
 
-// --- Helper: Fetch Completed eBay Items ---
+// --- Helper Functions ---
 const fetchCompletedItems = async (keywords) => {
     const url = `https://svcs.ebay.com/services/search/FindingService/v1?SECURITY-APPNAME=${EBAY_APP_ID}&OPERATION-NAME=findCompletedItems&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(keywords)}&itemFilter(0).name=SoldItemsOnly&itemFilter(0).value=true&sortOrder=EndTimeSoonest`;
     try {
@@ -31,40 +30,58 @@ const fetchCompletedItems = async (keywords) => {
 
 // --- API Endpoints ---
 
-// Health Check
 app.get('/', (req, res) => {
     res.send('Grading Opportunity server is running!');
 });
 
-/**
- * Analyzes the hotlist to find profitable grading opportunities.
- */
 app.get('/api/grading-opportunities', async (req, res) => {
-    console.log('Fetching grading opportunities...');
-    try {
-        const hotlistData = await fs.readFile(HOTLIST_PATH, 'utf8');
-        const hotlist = JSON.parse(hotlistData);
-        let opportunities = [];
+    const { year, sport } = req.query;
+    if (!year || !sport) {
+        return res.status(400).json({ error: 'Year and sport are required.' });
+    }
+    console.log(`Fetching opportunities for ${year} ${sport}...`);
 
+    try {
+        // Step 1: Find the most popular players for the given year/sport
+        const popularCardsKeywords = `${year} ${sport} psa`;
+        const popularCards = await fetchCompletedItems(popularCardsKeywords);
+        
+        const playerCounts = {};
+        popularCards.forEach(item => {
+            // A simple way to extract player names. This could be improved.
+            const title = item.title[0].toLowerCase();
+            const match = title.match(new RegExp(`\\b${year}\\b\\s(.*?)\\s(rc|#)`));
+            if (match && match[1]) {
+                const playerName = match[1].split(' ').slice(0, 2).join(' ');
+                if (playerName.length > 4) { // Filter out generic terms
+                    playerCounts[playerName] = (playerCounts[playerName] || 0) + 1;
+                }
+            }
+        });
+
+        const hotlist = Object.entries(playerCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10) // Analyze the top 10 most traded players
+            .map(entry => ({ name: `${year} ${entry[0]}`, grades: ['PSA 9'] }));
+
+        if (hotlist.length === 0) {
+            return res.json([]);
+        }
+
+        // Step 2: Analyze each popular card for profit potential
+        let opportunities = [];
         for (const card of hotlist) {
             for (const grade of card.grades) {
-                // Keywords for raw and graded searches
                 const rawKeywords = `${card.name} -psa -bgs -sgc -cgc`;
                 const gradedKeywords = `${card.name} ${grade}`;
 
-                // Fetch both sets of sales data in parallel
                 const [soldRaw, soldGraded] = await Promise.all([
                     fetchCompletedItems(rawKeywords),
                     fetchCompletedItems(gradedKeywords)
                 ]);
 
-                // Ensure we have enough data for a reliable average
-                if (soldRaw.length < 3 || soldGraded.length < 3) {
-                    continue;
-                }
+                if (soldRaw.length < 2 || soldGraded.length < 2) continue;
 
-                // ** UPDATED CALCULATION **
-                // Calculate the total acquisition cost (price + shipping) for raw cards.
                 const totalRawAcquisitionCost = soldRaw.reduce((acc, item) => {
                     const price = parseFloat(item.sellingStatus[0].currentPrice[0].__value__);
                     const shipping = parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0);
@@ -76,24 +93,21 @@ app.get('/api/grading-opportunities', async (req, res) => {
                 const avgPsaPrice = totalGradedPrice / soldGraded.length;
                 
                 const ebayFees = avgPsaPrice * EBAY_FEE_PERCENTAGE;
-                // ** UPDATED CALCULATION **
-                // Use the full acquisition cost in the profit formula.
                 const potentialProfit = avgPsaPrice - avgRawAcquisitionCost - GRADING_FEE - ebayFees;
 
                 if (potentialProfit > 0) {
                     opportunities.push({
                         cardName: card.name,
                         grade: grade,
-                        avgRawPrice: avgRawAcquisitionCost, // This now represents the total cost
+                        avgRawPrice: avgRawAcquisitionCost,
                         avgPsaPrice: avgPsaPrice,
                         potentialProfit: potentialProfit,
-                        imageUrl: soldGraded[0].galleryURL[0] // Use an image from a graded listing
+                        imageUrl: soldGraded[0].galleryURL[0]
                     });
                 }
             }
         }
 
-        // Sort by the highest potential profit
         opportunities.sort((a, b) => b.potentialProfit - a.potentialProfit);
         res.json(opportunities);
 
@@ -103,9 +117,6 @@ app.get('/api/grading-opportunities', async (req, res) => {
     }
 });
 
-/**
- * Fetches live, raw listings for a specific card.
- */
 app.get('/api/raw-listings', async (req, res) => {
     const { cardName } = req.query;
     if (!cardName) {
@@ -136,7 +147,6 @@ app.get('/api/raw-listings', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch raw listings.' });
     }
 });
-
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
