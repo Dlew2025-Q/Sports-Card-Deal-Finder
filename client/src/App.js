@@ -1,38 +1,8 @@
-/* eslint-disable no-undef */
 import React, { useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { Star, ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, Search } from 'lucide-react';
+import { ExternalLink, UserCheck, Truck, AlertCircle, ArrowLeft, Loader2, Search } from 'lucide-react';
 
 // --- Configuration ---
 const API_BASE_URL = 'https://sports-card-deal-server.onrender.com'; 
-
-// --- Firebase Configuration ---
-let firebaseConfig = {};
-try {
-    if (process.env.REACT_APP_FIREBASE_CONFIG) {
-        firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG);
-    } else if (typeof __firebase_config !== 'undefined') {
-        firebaseConfig = JSON.parse(__firebase_config);
-    }
-} catch (e) {
-    console.error("Could not parse Firebase config:", e);
-}
-
-// --- Initialize Firebase ---
-let app;
-let auth;
-let db;
-if (firebaseConfig.apiKey) {
-    try {
-        app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-    } catch (e) {
-        console.error("Error initializing Firebase:", e);
-    }
-}
 
 // --- Helper Components ---
 
@@ -125,7 +95,7 @@ export default function App() {
             const data = await response.json();
             setOpportunities(data);
         } catch (err) {
-            setError('Failed to fetch grading opportunities. The server might be busy.');
+            setError('Failed to fetch grading opportunities. The server might be busy or the hotlist is empty.');
             console.error(err);
         } finally {
             setLoading(false);
@@ -168,13 +138,13 @@ export default function App() {
             <div className="max-w-7xl mx-auto">
                 <header className="text-center mb-8">
                     <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-2">Sports Card <span className="text-indigo-400">Grading Opportunities</span></h1>
-                    <p className="text-lg text-gray-400">Find raw cards with the highest potential profit after grading.</p>
+                    <p className="text-lg text-gray-400">Top grading opportunities from your hotlist.</p>
                 </header>
 
                 <div className="mb-8 max-w-xl mx-auto space-y-4">
                     <button onClick={fetchOpportunities} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-full flex items-center justify-center transition-colors duration-300">
                         <Search className="w-5 h-5 mr-2" />
-                        Find Top Opportunities
+                        Refresh Opportunities
                     </button>
                 </div>
 
@@ -192,7 +162,7 @@ export default function App() {
                     <div>
                         {view === 'opportunities' && (
                             <>
-                                {opportunities.length === 0 && <div className="text-center col-span-full py-12"><p className="text-gray-400 text-lg">No profitable grading opportunities found. Try again in a few moments.</p></div>}
+                                {opportunities.length === 0 && <div className="text-center col-span-full py-12"><p className="text-gray-400 text-lg">No profitable grading opportunities found. Try adding more common cards to your hotlist.</p></div>}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                     {opportunities.map(item => <OpportunityCard key={`${item.cardName}-${item.grade}`} item={item} onSelect={handleSelectCard} />)}
                                 </div>
