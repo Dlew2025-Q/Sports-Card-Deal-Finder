@@ -58,30 +58,29 @@ app.get('/api/grading-opportunities', async (req, res) => {
 
                 console.log(`For "${card.name} ${grade}": Found ${soldRaw.length} raw sales and ${soldGraded.length} graded sales.`);
 
-                // ** THE FIX IS HERE **
-                // Lowered the requirement to 1 sale each to work better with sandbox data.
                 if (soldRaw.length < 1 || soldGraded.length < 1) {
                     continue;
                 }
 
-                const totalRawAcquisitionCost = soldRaw.reduce((acc, item) => {
+                // ** UPDATED CALCULATION **
+                // Now only considers the final price, ignoring shipping for a looser filter.
+                const totalRawPrice = soldRaw.reduce((acc, item) => {
                     const price = parseFloat(item.sellingStatus[0].currentPrice[0].__value__);
-                    const shipping = parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0);
-                    return acc + price + shipping;
+                    return acc + price;
                 }, 0);
-                const avgRawAcquisitionCost = totalRawAcquisitionCost / soldRaw.length;
+                const avgRawPrice = totalRawPrice / soldRaw.length;
 
                 const totalGradedPrice = soldGraded.reduce((acc, item) => acc + parseFloat(item.sellingStatus[0].currentPrice[0].__value__), 0);
                 const avgPsaPrice = totalGradedPrice / soldGraded.length;
                 
                 const ebayFees = avgPsaPrice * EBAY_FEE_PERCENTAGE;
-                const potentialProfit = avgPsaPrice - avgRawAcquisitionCost - GRADING_FEE - ebayFees;
+                const potentialProfit = avgPsaPrice - avgRawPrice - GRADING_FEE - ebayFees;
 
                 if (potentialProfit > 0) {
                     opportunities.push({
                         cardName: card.name,
                         grade: grade,
-                        avgRawPrice: avgRawAcquisitionCost,
+                        avgRawPrice: avgRawPrice, 
                         avgPsaPrice: avgPsaPrice,
                         potentialProfit: potentialProfit,
                         imageUrl: soldGraded[0].galleryURL[0]
