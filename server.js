@@ -1,5 +1,5 @@
 const express = require('express');
-const fetch = require('node-fetch'); // <-- THIS LINE FIXES THE ERROR
+const fetch = require('node-fetch'); // <-- The critical fix
 const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
@@ -10,8 +10,8 @@ const PORT = process.env.PORT || 3001;
 // --- Configuration ---
 const EBAY_APP_ID = 'DarrenLe-SportsCa-SBX-a63bb60a4-d55b26f0';
 const HOTLIST_PATH = path.join(__dirname, 'hotlist.json');
-const GRADING_FEE = 30; // Estimated cost to get a card graded
-const EBAY_FEE_PERCENTAGE = 0.13; // Approx. 13% for eBay fees
+const GRADING_FEE = 30;
+const EBAY_FEE_PERCENTAGE = 0.13;
 
 // --- CORS Configuration ---
 const corsOptions = {
@@ -19,7 +19,6 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
-
 app.use(express.json());
 
 // --- Helper: Fetch Completed eBay Items ---
@@ -36,7 +35,6 @@ const fetchCompletedItems = async (keywords) => {
 };
 
 // --- API Endpoints ---
-
 app.get('/', (req, res) => {
     res.send('Grading Opportunity server is running!');
 });
@@ -126,7 +124,7 @@ app.get('/api/raw-listings', async (req, res) => {
     }
 });
 
-
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    // This is the new diagnostic message
+    console.log(`SERVER VERSION 2.0 IS LIVE on port ${PORT}`);
 });
