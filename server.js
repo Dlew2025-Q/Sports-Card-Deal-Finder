@@ -58,29 +58,33 @@ app.get('/api/grading-opportunities', async (req, res) => {
 
                 console.log(`For "${card.name} ${grade}": Found ${soldRaw.length} raw sales and ${soldGraded.length} graded sales.`);
 
-                if (soldRaw.length < 1 || soldGraded.length < 1) {
+                // Loosened filter: only require a graded sale to proceed.
+                if (soldGraded.length < 1) {
                     continue;
                 }
+                
+                let avgRawAcquisitionCost = 1.00; // Default to $1 if no raw sales are found
 
-                // ** UPDATED CALCULATION **
-                // Now only considers the final price, ignoring shipping for a looser filter.
-                const totalRawPrice = soldRaw.reduce((acc, item) => {
-                    const price = parseFloat(item.sellingStatus[0].currentPrice[0].__value__);
-                    return acc + price;
-                }, 0);
-                const avgRawPrice = totalRawPrice / soldRaw.length;
+                if (soldRaw.length > 0) {
+                    const totalRawAcquisitionCost = soldRaw.reduce((acc, item) => {
+                        const price = parseFloat(item.sellingStatus[0].currentPrice[0].__value__);
+                        const shipping = parseFloat(item.shippingInfo[0].shippingServiceCost?.[0]?.__value__ || 0);
+                        return acc + price + shipping;
+                    }, 0);
+                    avgRawAcquisitionCost = totalRawAcquisitionCost / soldRaw.length;
+                }
 
                 const totalGradedPrice = soldGraded.reduce((acc, item) => acc + parseFloat(item.sellingStatus[0].currentPrice[0].__value__), 0);
                 const avgPsaPrice = totalGradedPrice / soldGraded.length;
                 
                 const ebayFees = avgPsaPrice * EBAY_FEE_PERCENTAGE;
-                const potentialProfit = avgPsaPrice - avgRawPrice - GRADING_FEE - ebayFees;
+                const potentialProfit = avgPsaPrice - avgRawAcquisitionCost - GRADING_FEE - ebayFees;
 
                 if (potentialProfit > 0) {
                     opportunities.push({
                         cardName: card.name,
                         grade: grade,
-                        avgRawPrice: avgRawPrice, 
+                        avgRawPrice: avgRawAcquisitionCost, 
                         avgPsaPrice: avgPsaPrice,
                         potentialProfit: potentialProfit,
                         imageUrl: soldGraded[0].galleryURL[0]
